@@ -1,0 +1,34 @@
+[package]
+name = "matrix"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+
+[features]
+default = ["binary"]
+binary = ["dep:clap", "dep:anyhow", "dep:signal-hook"]
+debug = ["dep:tracing"]
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+rand = { version = "0.8", features = ["small_rng"] }
+rand_xoshiro = "0.6"
+thiserror = "1"
+
+clap = { version = "4", features = ["derive"], optional = true }
+anyhow = { version = "1", optional = true }
+signal-hook = { version = "0.3", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+insta = "1"
+proptest = "1"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "matrix"
+path = "src/bin/matrix.rs"
+required-features = ["binary"]
