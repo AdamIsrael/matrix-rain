@@ -1,6 +1,6 @@
-//! Embedding the Matrix rain widget inside a larger ratatui layout.
+//! Embed the Matrix rain widget with a user-supplied character set.
 //!
-//! Run with: `cargo run --example embedded`
+//! Run with: `cargo run --example custom_charset`
 //! Quit: q, Esc, or Ctrl-C.
 
 use std::io;
@@ -13,11 +13,9 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Layout};
-use ratatui::widgets::Block;
 use ratatui::Terminal;
 
-use matrix_rain::{MatrixConfig, MatrixRain, MatrixRainState};
+use matrix_rain::{CharSet, MatrixConfig, MatrixRain, MatrixRainState};
 
 struct TerminalGuard;
 
@@ -50,21 +48,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     install_panic_hook();
     let _guard = TerminalGuard::enter()?;
 
-    let cfg = MatrixConfig::builder().density(0.5).build()?;
+    // Mix katakana with hex digits — every char must be exactly one terminal cell wide
+    // (full-width / combining chars are not detected per spec §5.4).
+    let chars: Vec<char> = "ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵ0123456789abcdef".chars().collect();
+
+    let cfg = MatrixConfig::builder()
+        .charset(CharSet::Custom(chars))
+        .density(0.7)
+        .build()?;
     let mut state = MatrixRainState::new();
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     let poll_dur = Duration::from_millis((1000u64 / cfg.fps as u64).max(1));
 
     loop {
         terminal.draw(|f| {
-            let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)])
-                .split(f.size());
-
-            f.render_stateful_widget(MatrixRain::new(&cfg), chunks[0], &mut state);
-            f.render_widget(
-                Block::bordered().title("Matrix Demo — press q to quit"),
-                chunks[1],
-            );
+            f.render_stateful_widget(MatrixRain::new(&cfg), f.size(), &mut state);
         })?;
 
         if event::poll(poll_dur)? {

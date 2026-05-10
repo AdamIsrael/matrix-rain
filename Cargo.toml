@@ -1,8 +1,12 @@
 [package]
-name = "matrix"
+name = "matrix-rain"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.74"
+description = "Classic Matrix digital rain effect as a ratatui widget and standalone TUI binary."
+license = "MIT"
+keywords = ["matrix", "rain", "tui", "ratatui", "terminal"]
+categories = ["command-line-utilities", "visualization"]
 
 [features]
 default = ["binary"]

@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::io::{self, IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +16,9 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use matrix::{CharSet, MatrixConfig, MatrixRain, MatrixRainState, Theme};
+use matrix_rain::{CharSet, MatrixConfig, MatrixRain, MatrixRainState, Theme};
+
+const MAX_CHARSET_FILE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Matrix digital rain effect for the terminal.")]
@@ -31,9 +35,9 @@ struct Cli {
     #[arg(short = 'd', long, default_value_t = 0.6, value_parser = parse_density)]
     density: f32,
 
-    /// Character set.
-    #[arg(long, value_enum, default_value_t = CharsetArg::Matrix)]
-    charset: CharsetArg,
+    /// Character set: one of matrix, ascii, hex, binary, or a path to a UTF-8 charset file (<= 1 MiB).
+    #[arg(long, default_value = "matrix", value_parser = parse_charset_arg)]
+    charset: CharsetSource,
 
     /// Theme.
     #[arg(long, value_enum, default_value_t = ThemeArg::Green)]
@@ -56,28 +60,93 @@ struct Cli {
     quit_on_any_key: bool,
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum CharsetArg {
+#[derive(Clone, Debug)]
+enum CharsetSource {
     Matrix,
+    Ascii,
+    Hex,
+    Binary,
+    Path(PathBuf),
 }
 
-impl From<CharsetArg> for CharSet {
-    fn from(c: CharsetArg) -> Self {
-        match c {
-            CharsetArg::Matrix => CharSet::Matrix,
+fn parse_charset_arg(s: &str) -> Result<CharsetSource, String> {
+    match s {
+        "matrix" => Ok(CharsetSource::Matrix),
+        "ascii" => Ok(CharsetSource::Ascii),
+        "hex" => Ok(CharsetSource::Hex),
+        "binary" => Ok(CharsetSource::Binary),
+        other => {
+            let path = PathBuf::from(other);
+            if !path.exists() {
+                return Err(format!(
+                    "'{other}' is neither a built-in charset (matrix, ascii, hex, binary) nor an existing file path"
+                ));
+            }
+            Ok(CharsetSource::Path(path))
         }
     }
+}
+
+fn resolve_charset(src: &CharsetSource) -> Result<CharSet> {
+    match src {
+        CharsetSource::Matrix => Ok(CharSet::Matrix),
+        CharsetSource::Ascii => Ok(CharSet::Ascii),
+        CharsetSource::Hex => Ok(CharSet::Hex),
+        CharsetSource::Binary => Ok(CharSet::Binary),
+        CharsetSource::Path(p) => Ok(CharSet::Custom(load_charset_from_path(p)?)),
+    }
+}
+
+fn load_charset_from_path(path: &Path) -> Result<Vec<char>> {
+    let meta = std::fs::metadata(path)
+        .with_context(|| format!("reading metadata for {}", path.display()))?;
+    if meta.len() > MAX_CHARSET_FILE_BYTES {
+        anyhow::bail!(
+            "charset file {} is {} bytes; maximum is {} ({}MiB)",
+            path.display(),
+            meta.len(),
+            MAX_CHARSET_FILE_BYTES,
+            MAX_CHARSET_FILE_BYTES / (1024 * 1024)
+        );
+    }
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("reading {} as UTF-8", path.display()))?;
+    let mut seen = HashSet::new();
+    let mut chars = Vec::new();
+    for c in content.chars() {
+        if c.is_whitespace() || c.is_control() {
+            continue;
+        }
+        if seen.insert(c) {
+            chars.push(c);
+        }
+    }
+    if chars.is_empty() {
+        anyhow::bail!(
+            "charset file {} contains no usable characters after filtering whitespace and controls",
+            path.display()
+        );
+    }
+    Ok(chars)
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ThemeArg {
     Green,
+    Amber,
+    Cyan,
+    Red,
+    Rainbow,
 }
 
 impl From<ThemeArg> for Theme {
     fn from(t: ThemeArg) -> Self {
         match t {
             ThemeArg::Green => Theme::ClassicGreen,
+            ThemeArg::Amber => Theme::Amber,
+            ThemeArg::Cyan => Theme::Cyan,
+            ThemeArg::Red => Theme::Red,
+            ThemeArg::Rainbow => Theme::Rainbow,
         }
     }
 }
@@ -154,11 +223,12 @@ fn should_quit(key: &KeyEvent, any_key: bool) -> bool {
 }
 
 fn build_config(args: &Cli) -> Result<MatrixConfig> {
+    let charset = resolve_charset(&args.charset)?;
     MatrixConfig::builder()
         .fps(args.fps)
         .speed(args.speed)
         .density(args.density)
-        .charset(args.charset.into())
+        .charset(charset)
         .theme(args.theme.into())
         .head_white(!args.no_head_white)
         .bold_head(!args.no_bold)
@@ -166,9 +236,7 @@ fn build_config(args: &Cli) -> Result<MatrixConfig> {
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
-fn run(args: Cli, shutdown: Arc<AtomicBool>) -> Result<()> {
-    let cfg = build_config(&args).context("invalid configuration")?;
-
+fn run(args: &Cli, cfg: &MatrixConfig, shutdown: Arc<AtomicBool>) -> Result<()> {
     let mut state = match args.seed {
         Some(s) => MatrixRainState::with_seed(s),
         None => MatrixRainState::new(),
@@ -181,7 +249,7 @@ fn run(args: Cli, shutdown: Arc<AtomicBool>) -> Result<()> {
 
     while !shutdown.load(Ordering::Relaxed) {
         match terminal.draw(|f| {
-            f.render_stateful_widget(MatrixRain::new(&cfg), f.size(), &mut state);
+            f.render_stateful_widget(MatrixRain::new(cfg), f.size(), &mut state);
         }) {
             Ok(_) => {}
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
@@ -217,12 +285,22 @@ fn main() -> Result<()> {
         std::process::exit(2);
     }
 
+    // Resolve config before entering raw mode so file/validation errors
+    // exit cleanly without garbling the terminal.
+    let cfg = match build_config(&args) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(io::stderr(), "matrix: {e:#}");
+            std::process::exit(2);
+        }
+    };
+
     install_panic_hook();
     let shutdown = Arc::new(AtomicBool::new(false));
     install_signal_handlers(shutdown.clone()).context("installing signal handlers")?;
 
     let _guard = TerminalGuard::enter().context("entering raw mode")?;
-    run(args, shutdown)
+    run(&args, &cfg, shutdown)
 }
 
 #[cfg(test)]
@@ -369,5 +447,107 @@ mod tests {
     #[test]
     fn parse_density_rejects_nan() {
         assert!(parse_density("NaN").is_err());
+    }
+
+    struct TempFile(PathBuf);
+
+    impl TempFile {
+        fn new(name: &str, contents: &[u8]) -> Self {
+            let mut path = std::env::temp_dir();
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            path.push(format!(
+                "matrix-test-{}-{}-{}",
+                std::process::id(),
+                name,
+                nanos
+            ));
+            std::fs::write(&path, contents).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn parse_charset_arg_returns_builtin_for_each_name() {
+        for (name, expected) in [
+            ("matrix", CharsetSource::Matrix),
+            ("ascii", CharsetSource::Ascii),
+            ("hex", CharsetSource::Hex),
+            ("binary", CharsetSource::Binary),
+        ] {
+            let got = parse_charset_arg(name).unwrap();
+            assert!(matches!(
+                (&got, &expected),
+                (CharsetSource::Matrix, CharsetSource::Matrix)
+                    | (CharsetSource::Ascii, CharsetSource::Ascii)
+                    | (CharsetSource::Hex, CharsetSource::Hex)
+                    | (CharsetSource::Binary, CharsetSource::Binary)
+            ));
+        }
+    }
+
+    #[test]
+    fn parse_charset_arg_rejects_nonexistent_path() {
+        let err = parse_charset_arg("/this/path/does/not/exist/charset.txt").unwrap_err();
+        assert!(err.contains("neither a built-in"));
+    }
+
+    #[test]
+    fn parse_charset_arg_accepts_existing_path() {
+        let tf = TempFile::new("existing", b"abc");
+        let got = parse_charset_arg(tf.path().to_str().unwrap()).unwrap();
+        assert!(matches!(got, CharsetSource::Path(_)));
+    }
+
+    #[test]
+    fn load_charset_filters_whitespace_and_controls() {
+        let tf = TempFile::new("filter", b"abc\ndef\tghi  xyz");
+        let chars = load_charset_from_path(tf.path()).unwrap();
+        for c in &chars {
+            assert!(!c.is_whitespace() && !c.is_control());
+        }
+        assert!(chars.contains(&'a'));
+        assert!(chars.contains(&'z'));
+    }
+
+    #[test]
+    fn load_charset_dedupes() {
+        let tf = TempFile::new("dedupe", b"aabbccaa");
+        let chars = load_charset_from_path(tf.path()).unwrap();
+        assert_eq!(chars, vec!['a', 'b', 'c']);
+    }
+
+    #[test]
+    fn load_charset_rejects_empty_after_filtering() {
+        let tf = TempFile::new("empty", b"   \n\n\t\t");
+        let err = load_charset_from_path(tf.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("no usable characters"));
+    }
+
+    #[test]
+    fn load_charset_rejects_too_large_file() {
+        let big = vec![b'a'; (MAX_CHARSET_FILE_BYTES + 1) as usize];
+        let tf = TempFile::new("big", &big);
+        let err = load_charset_from_path(tf.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("maximum"));
+    }
+
+    #[test]
+    fn load_charset_rejects_non_utf8() {
+        let tf = TempFile::new("nonutf8", &[0xFF, 0xFE, 0xFD]);
+        let err = load_charset_from_path(tf.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("UTF-8"));
     }
 }

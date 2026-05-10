@@ -118,8 +118,60 @@ impl MatrixConfigBuilder {
     }
 
     pub fn build(self) -> Result<MatrixConfig, MatrixError> {
+        let c = &self.config;
+
+        if c.fps < 1 {
+            return Err(invalid("fps must be >= 1"));
+        }
+        if !c.speed.is_finite() || c.speed <= 0.0 {
+            return Err(invalid(&format!(
+                "speed must be a positive finite number (got {})",
+                c.speed
+            )));
+        }
+        if !c.density.is_finite() || !(0.0..=1.0).contains(&c.density) {
+            return Err(invalid(&format!(
+                "density must be a finite number in [0.0, 1.0] (got {})",
+                c.density
+            )));
+        }
+        if c.min_trail < 1 {
+            return Err(invalid("min_trail must be >= 1"));
+        }
+        if c.min_trail > c.max_trail {
+            return Err(invalid(&format!(
+                "min_trail ({}) must be <= max_trail ({})",
+                c.min_trail, c.max_trail
+            )));
+        }
+        if c.max_trail > MAX_TRAIL_LIMIT {
+            return Err(invalid(&format!(
+                "max_trail ({}) exceeds limit of {}",
+                c.max_trail, MAX_TRAIL_LIMIT
+            )));
+        }
+        if !c.mutation_rate.is_finite() || !(0.0..=1.0).contains(&c.mutation_rate) {
+            return Err(invalid(&format!(
+                "mutation_rate must be a finite number in [0.0, 1.0] (got {})",
+                c.mutation_rate
+            )));
+        }
+        if !c.glitch.is_finite() || !(0.0..=1.0).contains(&c.glitch) {
+            return Err(invalid(&format!(
+                "glitch must be a finite number in [0.0, 1.0] (got {})",
+                c.glitch
+            )));
+        }
+        c.charset.validate()?;
+
         Ok(self.config)
     }
+}
+
+pub const MAX_TRAIL_LIMIT: u16 = 1024;
+
+fn invalid(msg: &str) -> MatrixError {
+    MatrixError::InvalidConfig(msg.to_string())
 }
 
 impl Default for MatrixConfigBuilder {
@@ -171,5 +223,172 @@ mod tests {
         assert_eq!(cfg.density, default.density);
         assert_eq!(cfg.min_trail, default.min_trail);
         assert_eq!(cfg.max_trail, default.max_trail);
+    }
+
+    #[test]
+    fn build_rejects_empty_custom_charset() {
+        let err = MatrixConfig::builder()
+            .charset(CharSet::Custom(vec![]))
+            .build()
+            .unwrap_err();
+        assert!(matches!(err, MatrixError::EmptyCharset));
+    }
+
+    #[test]
+    fn build_rejects_control_chars_in_custom() {
+        let err = MatrixConfig::builder()
+            .charset(CharSet::Custom(vec!['a', '\n']))
+            .build()
+            .unwrap_err();
+        assert!(matches!(err, MatrixError::InvalidConfig(_)));
+    }
+
+    fn invalid_err(r: Result<MatrixConfig, MatrixError>, expected_keyword: &str) {
+        match r {
+            Err(MatrixError::InvalidConfig(msg)) => assert!(
+                msg.contains(expected_keyword),
+                "expected '{expected_keyword}' in error, got: {msg}"
+            ),
+            other => panic!("expected InvalidConfig containing '{expected_keyword}', got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_rejects_fps_zero() {
+        invalid_err(MatrixConfig::builder().fps(0).build(), "fps");
+    }
+
+    #[test]
+    fn build_rejects_speed_zero() {
+        invalid_err(MatrixConfig::builder().speed(0.0).build(), "speed");
+    }
+
+    #[test]
+    fn build_rejects_speed_negative() {
+        invalid_err(MatrixConfig::builder().speed(-0.5).build(), "speed");
+    }
+
+    #[test]
+    fn build_rejects_speed_nan() {
+        invalid_err(MatrixConfig::builder().speed(f32::NAN).build(), "speed");
+    }
+
+    #[test]
+    fn build_rejects_speed_infinite() {
+        invalid_err(MatrixConfig::builder().speed(f32::INFINITY).build(), "speed");
+    }
+
+    #[test]
+    fn build_rejects_density_above_one() {
+        invalid_err(MatrixConfig::builder().density(1.1).build(), "density");
+    }
+
+    #[test]
+    fn build_rejects_density_negative() {
+        invalid_err(MatrixConfig::builder().density(-0.1).build(), "density");
+    }
+
+    #[test]
+    fn build_rejects_density_nan() {
+        invalid_err(MatrixConfig::builder().density(f32::NAN).build(), "density");
+    }
+
+    #[test]
+    fn build_rejects_min_trail_zero() {
+        invalid_err(MatrixConfig::builder().min_trail(0).build(), "min_trail");
+    }
+
+    #[test]
+    fn build_rejects_min_greater_than_max_trail() {
+        invalid_err(
+            MatrixConfig::builder().min_trail(10).max_trail(5).build(),
+            "min_trail",
+        );
+    }
+
+    #[test]
+    fn build_rejects_max_trail_above_limit() {
+        invalid_err(
+            MatrixConfig::builder()
+                .min_trail(1)
+                .max_trail(MAX_TRAIL_LIMIT + 1)
+                .build(),
+            "max_trail",
+        );
+    }
+
+    #[test]
+    fn build_rejects_mutation_rate_above_one() {
+        invalid_err(
+            MatrixConfig::builder().mutation_rate(1.1).build(),
+            "mutation_rate",
+        );
+    }
+
+    #[test]
+    fn build_rejects_mutation_rate_negative() {
+        invalid_err(
+            MatrixConfig::builder().mutation_rate(-0.1).build(),
+            "mutation_rate",
+        );
+    }
+
+    #[test]
+    fn build_rejects_mutation_rate_nan() {
+        invalid_err(
+            MatrixConfig::builder().mutation_rate(f32::NAN).build(),
+            "mutation_rate",
+        );
+    }
+
+    #[test]
+    fn build_rejects_glitch_above_one() {
+        invalid_err(MatrixConfig::builder().glitch(1.1).build(), "glitch");
+    }
+
+    #[test]
+    fn build_rejects_glitch_negative() {
+        invalid_err(MatrixConfig::builder().glitch(-0.1).build(), "glitch");
+    }
+
+    #[test]
+    fn build_rejects_glitch_nan() {
+        invalid_err(MatrixConfig::builder().glitch(f32::NAN).build(), "glitch");
+    }
+
+    #[test]
+    fn build_accepts_density_boundaries() {
+        assert!(MatrixConfig::builder().density(0.0).build().is_ok());
+        assert!(MatrixConfig::builder().density(1.0).build().is_ok());
+    }
+
+    #[test]
+    fn build_accepts_min_equals_max_trail() {
+        assert!(MatrixConfig::builder()
+            .min_trail(5)
+            .max_trail(5)
+            .build()
+            .is_ok());
+    }
+
+    #[test]
+    fn build_accepts_mutation_rate_boundaries() {
+        assert!(MatrixConfig::builder().mutation_rate(0.0).build().is_ok());
+        assert!(MatrixConfig::builder().mutation_rate(1.0).build().is_ok());
+    }
+
+    #[test]
+    fn build_accepts_glitch_boundaries() {
+        assert!(MatrixConfig::builder().glitch(0.0).build().is_ok());
+        assert!(MatrixConfig::builder().glitch(1.0).build().is_ok());
+    }
+
+    #[test]
+    fn build_accepts_max_trail_at_limit() {
+        assert!(MatrixConfig::builder()
+            .min_trail(1)
+            .max_trail(MAX_TRAIL_LIMIT)
+            .build()
+            .is_ok());
     }
 }

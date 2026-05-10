@@ -1,3 +1,5 @@
+use crate::error::MatrixError;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CharSet {
     Matrix,
@@ -11,12 +13,27 @@ impl CharSet {
     pub(crate) fn chars(&self) -> &[char] {
         match self {
             Self::Matrix => MATRIX_CHARS,
+            Self::Ascii => ASCII_CHARS,
+            Self::Hex => HEX_CHARS,
+            Self::Binary => BINARY_CHARS,
             Self::Custom(v) => v.as_slice(),
-            Self::Ascii | Self::Hex | Self::Binary => unimplemented!(
-                "CharSet::{:?} is not implemented until 0.2.0 (matrix-ftw.1)",
-                self
-            ),
         }
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), MatrixError> {
+        let chars = self.chars();
+        if chars.is_empty() {
+            return Err(MatrixError::EmptyCharset);
+        }
+        for c in chars {
+            if c.is_control() {
+                return Err(MatrixError::InvalidConfig(format!(
+                    "charset contains control character U+{:04X}",
+                    *c as u32
+                )));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -29,6 +46,25 @@ const MATRIX_CHARS: &[char] = &[
     'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ', '0', '1', '2', '3',
     '4', '5', '6', '7', '8', '9',
 ];
+
+const ASCII_CHARS: &[char] = &[
+    '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*',
+    '+', ',', '-', '.', '/', '0', '1', '2', '3', '4',
+    '5', '6', '7', '8', '9', ':', ';', '<', '=', '>',
+    '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+    'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+    'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '[', '\\',
+    ']', '^', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f',
+    'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+    '{', '|', '}', '~',
+];
+
+const HEX_CHARS: &[char] = &[
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
+const BINARY_CHARS: &[char] = &['0', '1'];
 
 #[cfg(test)]
 mod tests {
@@ -55,14 +91,77 @@ mod tests {
     }
 
     #[test]
+    fn ascii_chars_exclude_space_and_control() {
+        let chars = CharSet::Ascii.chars();
+        assert!(!chars.is_empty());
+        assert!(!chars.contains(&' '));
+        assert!(!chars.contains(&'\n'));
+        assert!(!chars.contains(&'\t'));
+        assert!(chars.contains(&'!'));
+        assert!(chars.contains(&'~'));
+        assert!(chars.contains(&'A'));
+        assert!(chars.contains(&'z'));
+        assert!(chars.contains(&'0'));
+    }
+
+    #[test]
+    fn hex_chars_are_digits_and_lower_af() {
+        let chars = CharSet::Hex.chars();
+        assert_eq!(chars.len(), 16);
+        for d in '0'..='9' {
+            assert!(chars.contains(&d));
+        }
+        for d in 'a'..='f' {
+            assert!(chars.contains(&d));
+        }
+        // No uppercase per spec ("0–9 a–f").
+        assert!(!chars.contains(&'A'));
+    }
+
+    #[test]
+    fn binary_chars_are_zero_and_one() {
+        assert_eq!(CharSet::Binary.chars(), &['0', '1']);
+    }
+
+    #[test]
     fn custom_passthrough() {
         let cs = CharSet::Custom(vec!['a', 'b', 'c']);
         assert_eq!(cs.chars(), &['a', 'b', 'c']);
     }
 
     #[test]
-    #[should_panic(expected = "0.2.0")]
-    fn ascii_not_yet_implemented() {
-        let _ = CharSet::Ascii.chars();
+    fn validate_passes_for_all_builtins() {
+        for cs in [CharSet::Matrix, CharSet::Ascii, CharSet::Hex, CharSet::Binary] {
+            assert!(cs.validate().is_ok(), "{cs:?} should validate");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_empty_custom() {
+        let err = CharSet::Custom(vec![]).validate().unwrap_err();
+        assert!(matches!(err, MatrixError::EmptyCharset));
+    }
+
+    #[test]
+    fn validate_rejects_control_chars() {
+        for bad in ['\n', '\r', '\t', '\0', '\x07'] {
+            let err = CharSet::Custom(vec!['a', bad, 'b']).validate().unwrap_err();
+            assert!(
+                matches!(err, MatrixError::InvalidConfig(_)),
+                "control char {bad:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_accepts_single_char_custom() {
+        assert!(CharSet::Custom(vec!['x']).validate().is_ok());
+    }
+
+    #[test]
+    fn validate_does_not_check_display_width() {
+        // Full-width / combining chars are NOT detected per spec §5.4 — caller's responsibility.
+        // Just confirm validation passes for one example so the test documents the policy.
+        assert!(CharSet::Custom(vec!['漢']).validate().is_ok());
     }
 }

@@ -15,7 +15,7 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use matrix::{MatrixConfig, MatrixRain, MatrixRainState};
+use matrix_rain::{MatrixConfig, MatrixRain, MatrixRainState};
 
 struct TerminalGuard;
 

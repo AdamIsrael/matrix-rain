@@ -1,7 +1,7 @@
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
-use matrix::{MatrixConfig, MatrixRain, MatrixRainState};
+use matrix_rain::{MatrixConfig, MatrixRain, MatrixRainState};
 
 #[test]
 fn renders_1000_frames_without_panic_preserving_per_column_invariant() {

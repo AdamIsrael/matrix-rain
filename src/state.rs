@@ -79,7 +79,11 @@ impl MatrixRainState {
         self.color_count
     }
 
-    pub(crate) fn set_color_count(&mut self, count: u16) {
+    /// Override the cached terminal color count, suppressing auto-detection on the next render.
+    /// Useful for forcing a specific gradient tier (16-color collapse for accessibility,
+    /// 256-color quantization, or u16::MAX for the smooth-interpolation path) and for
+    /// deterministic testing where TERM/COLORTERM should not influence rendering.
+    pub fn set_color_count(&mut self, count: u16) {
         self.color_count = Some(count);
     }
 
