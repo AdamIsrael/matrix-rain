@@ -175,6 +175,16 @@ impl MatrixRainState {
         for stream in &mut self.streams {
             stream.tick(area.height, config.fps, &mut self.rng);
         }
+        if config.mutation_rate > 0.0 {
+            for stream in &mut self.streams {
+                stream.mutate(&mut self.rng, chars, config.mutation_rate);
+            }
+        }
+        if config.glitch > 0.0 {
+            for stream in &mut self.streams {
+                stream.glitch_roll(&mut self.rng, config.glitch);
+            }
+        }
         for stream in &mut self.streams {
             if stream.is_ready_to_spawn() && self.rng.gen::<f32>() < config.density {
                 stream.spawn(
@@ -363,5 +373,107 @@ mod tests {
     fn state_is_send() {
         fn assert_send<T: Send>() {}
         assert_send::<MatrixRainState>();
+    }
+
+    #[test]
+    fn mutation_rate_zero_keeps_glyphs_unchanged_per_tick() {
+        // Tall area so the stream we're tracking can't retire mid-test.
+        let cfg = MatrixConfig::builder()
+            .fps(30)
+            .density(1.0)
+            .mutation_rate(0.0)
+            .min_trail(8)
+            .max_trail(8)
+            .charset(crate::charset::CharSet::Custom(vec!['a', 'b', 'c']))
+            .build()
+            .unwrap();
+        let mut s = MatrixRainState::with_seed(0x1234);
+        s.advance(area(8, 400), &cfg);
+        for _ in 0..15 {
+            s.apply_one_tick(area(8, 400), &cfg);
+        }
+        let idx = s.streams.iter().position(|st| st.is_active()).expect("active");
+        let before: Vec<char> = s.streams[idx].glyphs().to_vec();
+        s.apply_one_tick(area(8, 400), &cfg);
+        assert!(s.streams[idx].is_active());
+        assert_eq!(s.streams[idx].glyphs(), before.as_slice());
+    }
+
+    #[test]
+    fn glitch_zero_leaves_flags_unset_after_apply_one_tick() {
+        let cfg = MatrixConfig::builder()
+            .fps(30)
+            .density(1.0)
+            .glitch(0.0)
+            .build()
+            .unwrap();
+        let mut s = MatrixRainState::with_seed(0xFEED);
+        s.advance(area(8, 200), &cfg);
+        for _ in 0..10 {
+            s.apply_one_tick(area(8, 200), &cfg);
+        }
+        for stream in &s.streams {
+            if stream.is_active() {
+                for i in 0..stream.length() {
+                    assert!(!stream.is_glitched(i));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glitch_one_sets_all_flags_after_apply_one_tick() {
+        let cfg = MatrixConfig::builder()
+            .fps(30)
+            .density(1.0)
+            .glitch(1.0)
+            .min_trail(6)
+            .max_trail(6)
+            .build()
+            .unwrap();
+        let mut s = MatrixRainState::with_seed(0xFEED);
+        s.advance(area(8, 200), &cfg);
+        for _ in 0..15 {
+            s.apply_one_tick(area(8, 200), &cfg);
+        }
+        let stream = s.streams.iter().find(|st| st.is_active()).expect("active");
+        for i in 0..stream.length() {
+            assert!(stream.is_glitched(i), "cell {i} should be glitched at rate=1.0");
+        }
+    }
+
+    #[test]
+    fn mutation_rate_one_changes_at_least_one_glyph_per_tick() {
+        // Charset of 2 → each cell has 50% chance of flipping per tick when rate=1.
+        // Across 8 cells the prob all stay same is (0.5)^8 = 1/256; with a fixed
+        // seed this is deterministic.
+        let cfg = MatrixConfig::builder()
+            .fps(30)
+            .density(1.0)
+            .mutation_rate(1.0)
+            .min_trail(8)
+            .max_trail(8)
+            .charset(crate::charset::CharSet::Custom(vec!['a', 'b']))
+            .build()
+            .unwrap();
+        let mut s = MatrixRainState::with_seed(0xABCD);
+        s.advance(area(8, 400), &cfg);
+        for _ in 0..15 {
+            s.apply_one_tick(area(8, 400), &cfg);
+        }
+        let idx = s.streams.iter().position(|st| st.is_active()).expect("active");
+        let before: Vec<char> = s.streams[idx].glyphs().to_vec();
+        s.apply_one_tick(area(8, 400), &cfg);
+        assert!(s.streams[idx].is_active());
+        let changed = s.streams[idx]
+            .glyphs()
+            .iter()
+            .zip(before.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        assert!(changed > 0, "expected at least one glyph to mutate");
+        for g in s.streams[idx].glyphs() {
+            assert!(['a', 'b'].contains(g), "mutated glyph {g} not from charset");
+        }
     }
 }

@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 82
 expression: s
 ---
-ｸ    ﾛ   ｷｪｽｭ0 ｩﾓｼﾇｴ2   ﾂ   ｽﾔ
+ｸ    ｳ   ｺｫｹﾄ5 ｩﾓﾕ5ｷﾕ   ﾊ   3ｧ

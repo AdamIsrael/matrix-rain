@@ -107,7 +107,10 @@ fn paint_stream(
             continue;
         };
 
-        let color = pick_color(ramp, head_white, i, length, tier);
+        let mut color = pick_color(ramp, head_white, i, length, tier);
+        if i > 0 && stream.is_glitched(i) {
+            color = ramp.head;
+        }
 
         if should_skip(i, length, color, ramp.fade, background) {
             continue;

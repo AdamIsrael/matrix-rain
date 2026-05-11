@@ -1,25 +1,24 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 76
 expression: s
 ---
-ｼ
+ｮ
 ﾅ
-ｼ
-ｼ
-ｼ
-ｼ
-ｼ
-ｼ
+ｮ
+ｮ
+ｮ
+ｮ
+ｮ
+ｮ
 ﾅ
-ｼ
-ｼ
-ｼ
-ｼ
-ｼ
-ｼ
+ｮ
+ｮ
+ｮ
+ｮ
+ｮ
+ｮ
 ﾅ
-ｼ
-ｼ
-ｼ
-ｼ
+ｮ
+ｮ
+ｮ
+ｹ

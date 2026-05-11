@@ -32,8 +32,16 @@ struct Cli {
     speed: f32,
 
     /// Column density (0.0–1.0).
-    #[arg(short = 'd', long, default_value_t = 0.6, value_parser = parse_density)]
+    #[arg(short = 'd', long, default_value_t = 0.6, value_parser = parse_unit_interval)]
     density: f32,
+
+    /// Per-cell glyph reroll probability per tick (0.0–1.0).
+    #[arg(long, default_value_t = 0.05, value_parser = parse_unit_interval)]
+    mutation_rate: f32,
+
+    /// Per-cell glitch (color flicker) probability per tick (0.0–1.0).
+    #[arg(long, default_value_t = 0.0, value_parser = parse_unit_interval)]
+    glitch: f32,
 
     /// Character set: one of matrix, ascii, hex, binary, or a path to a UTF-8 charset file (<= 1 MiB).
     #[arg(long, default_value = "matrix", value_parser = parse_charset_arg)]
@@ -159,7 +167,7 @@ fn parse_positive_f32(s: &str) -> Result<f32, String> {
     Ok(v)
 }
 
-fn parse_density(s: &str) -> Result<f32, String> {
+fn parse_unit_interval(s: &str) -> Result<f32, String> {
     let v: f32 = s.parse().map_err(|e: std::num::ParseFloatError| e.to_string())?;
     if !v.is_finite() || !(0.0..=1.0).contains(&v) {
         return Err(format!("must be a finite number in [0.0, 1.0] (got {v})"));
@@ -228,6 +236,8 @@ fn build_config(args: &Cli) -> Result<MatrixConfig> {
         .fps(args.fps)
         .speed(args.speed)
         .density(args.density)
+        .mutation_rate(args.mutation_rate)
+        .glitch(args.glitch)
         .charset(charset)
         .theme(args.theme.into())
         .head_white(!args.no_head_white)
@@ -445,8 +455,59 @@ mod tests {
     }
 
     #[test]
-    fn parse_density_rejects_nan() {
-        assert!(parse_density("NaN").is_err());
+    fn parse_unit_interval_rejects_nan() {
+        assert!(parse_unit_interval("NaN").is_err());
+    }
+
+    #[test]
+    fn cli_accepts_glitch_in_unit_interval() {
+        let cli = Cli::try_parse_from(["matrix", "--glitch", "0.0"]).unwrap();
+        assert_eq!(cli.glitch, 0.0);
+        let cli = Cli::try_parse_from(["matrix", "--glitch", "1.0"]).unwrap();
+        assert_eq!(cli.glitch, 1.0);
+        let cli = Cli::try_parse_from(["matrix", "--glitch", "0.5"]).unwrap();
+        assert_eq!(cli.glitch, 0.5);
+    }
+
+    #[test]
+    fn cli_rejects_glitch_outside_unit_interval() {
+        assert!(Cli::try_parse_from(["matrix", "--glitch", "1.1"]).is_err());
+        assert!(Cli::try_parse_from(["matrix", "--glitch", "-0.1"]).is_err());
+    }
+
+    #[test]
+    fn cli_default_glitch_is_zero() {
+        let cli = Cli::try_parse_from(["matrix"]).unwrap();
+        assert_eq!(cli.glitch, 0.0);
+    }
+
+    #[test]
+    fn cli_accepts_mutation_rate_in_unit_interval() {
+        let cli = Cli::try_parse_from(["matrix", "--mutation-rate", "0.0"]).unwrap();
+        assert_eq!(cli.mutation_rate, 0.0);
+        let cli = Cli::try_parse_from(["matrix", "--mutation-rate", "1.0"]).unwrap();
+        assert_eq!(cli.mutation_rate, 1.0);
+    }
+
+    #[test]
+    fn cli_default_mutation_rate_matches_lib_default() {
+        let cli = Cli::try_parse_from(["matrix"]).unwrap();
+        assert_eq!(cli.mutation_rate, 0.05);
+    }
+
+    #[test]
+    fn build_config_propagates_glitch_and_mutation() {
+        let args = Cli::try_parse_from([
+            "matrix",
+            "--glitch",
+            "0.2",
+            "--mutation-rate",
+            "0.7",
+        ])
+        .unwrap();
+        let cfg = build_config(&args).unwrap();
+        assert_eq!(cfg.glitch, 0.2);
+        assert_eq!(cfg.mutation_rate, 0.7);
     }
 
     struct TempFile(PathBuf);
