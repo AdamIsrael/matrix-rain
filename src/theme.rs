@@ -1,21 +1,80 @@
+//! Color themes and the 5-stop [`ColorRamp`] that backs each one.
+
 use ratatui::style::Color;
 
+/// Color theme controlling the trail gradient.
+///
+/// Each variant resolves to a 5-stop [`ColorRamp`]. Used by the widget's
+/// renderer; the actual rendering tier (smooth interpolation, nearest-of-5
+/// quantization, or 3-zone named-color collapse) is picked separately based
+/// on detected terminal color depth — see the crate-level docs.
+///
+/// # Example
+///
+/// ```
+/// use matrix_rain::{MatrixConfig, Theme};
+///
+/// let cfg = MatrixConfig::builder().theme(Theme::Amber).build().unwrap();
+/// assert!(matches!(cfg.theme, Theme::Amber));
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Theme {
+    /// White head over a green trail. The canonical Matrix look.
+    /// Stops: `0xFFFFFF → 0xCCFFCC → 0x00FF00 → 0x009900 → 0x003300`.
     ClassicGreen,
+    /// White head over a warm amber trail.
     Amber,
+    /// White head over a cyan trail.
     Cyan,
+    /// White head over a red trail.
     Red,
+    /// White head with a rainbow trail (red → yellow → green → blue).
+    /// Most visually distinctive on truecolor terminals; collapses to
+    /// adjacent named colors on lower tiers.
     Rainbow,
-    Custom(ColorRamp),
+    /// User-supplied 5-stop ramp.
+    Custom(/// The ramp to use.
+        ColorRamp),
 }
 
+/// Five-stop color ramp. `head` is the brightest cell (typically white);
+/// stops degrade through `bright`, `mid`, `dim`, to the visible-but-faint
+/// `fade` at the tail.
+///
+/// The renderer maps cell positions in `[0, length-1]` to these stops:
+///
+/// - **Truecolor**: linear lerp between adjacent stops.
+/// - **256-color**: nearest of the 5 stops.
+/// - **16-color**: collapsed into 3 zones — `bright` (early trail),
+///   `mid` (middle), `fade` (tail) — each mapped to the nearest named color.
+///
+/// # Example
+///
+/// ```
+/// use matrix_rain::{ColorRamp, Theme};
+/// use ratatui::style::Color;
+///
+/// let monochrome = ColorRamp {
+///     head: Color::White,
+///     bright: Color::Gray,
+///     mid: Color::DarkGray,
+///     dim: Color::DarkGray,
+///     fade: Color::Black,
+/// };
+/// let theme = Theme::Custom(monochrome);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ColorRamp {
+    /// Brightest stop. The head cell uses this when `head_white` is true.
     pub head: Color,
+    /// Bright stop just below the head. Also used by the head when
+    /// `head_white` is false.
     pub bright: Color,
+    /// Middle of the gradient.
     pub mid: Color,
+    /// Dim stop near the tail.
     pub dim: Color,
+    /// Faintest visible stop at the very end of the trail.
     pub fade: Color,
 }
 

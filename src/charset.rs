@@ -1,12 +1,41 @@
+//! Built-in glyph sets and the [`CharSet`] enum for supplying your own.
+
 use crate::error::MatrixError;
 
+/// Source of glyphs for the falling drops.
+///
+/// Each variant resolves to a slice of single-cell characters drawn from
+/// randomly per cell at spawn (and per cell per frame when `mutation_rate > 0`).
+///
+/// # Example
+///
+/// ```
+/// use matrix_rain::{CharSet, MatrixConfig};
+///
+/// let cfg = MatrixConfig::builder()
+///     .charset(CharSet::Hex)
+///     .build()
+///     .unwrap();
+/// assert!(matches!(cfg.charset, CharSet::Hex));
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CharSet {
+    /// Half-width katakana `U+FF66..=U+FF9D` plus digits `0..=9` (66 glyphs).
+    /// The canonical Matrix look.
     Matrix,
+    /// Printable ASCII `0x21..=0x7E` (94 glyphs; space is excluded so the
+    /// rain stays visually dense).
     Ascii,
+    /// Lowercase hexadecimal: `0`–`9` and `a`–`f` (16 glyphs).
     Hex,
+    /// Just `0` and `1`.
     Binary,
-    Custom(Vec<char>),
+    /// User-supplied glyph list. Validated at
+    /// [`MatrixConfigBuilder::build`](crate::MatrixConfigBuilder::build) time:
+    /// must be non-empty and free of `char::is_control` characters. Display
+    /// width is **not** validated — see the crate-level Caveats.
+    Custom(/// Glyphs to draw from.
+        Vec<char>),
 }
 
 impl CharSet {

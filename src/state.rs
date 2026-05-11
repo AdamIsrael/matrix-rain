@@ -1,3 +1,6 @@
+//! Per-frame animation state carried across [`MatrixRain`](crate::MatrixRain)
+//! renders.
+
 use std::cell::Cell;
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
@@ -11,6 +14,29 @@ use crate::stream::Stream;
 
 const MAX_CATCHUP_TICKS: u32 = 4;
 
+/// Per-frame animation state for a [`MatrixRain`](crate::MatrixRain) widget.
+///
+/// Holds one stream per terminal column, a seeded RNG, timing bookkeeping,
+/// and a cached terminal color count. The same state instance must be passed
+/// across consecutive renders so the animation continues from frame to frame.
+///
+/// `MatrixRainState` is `Send` but not `Sync` — it's designed for
+/// single-threaded use (render takes `&mut self`).
+///
+/// # Example
+///
+/// ```
+/// use matrix_rain::{MatrixConfig, MatrixRain, MatrixRainState};
+/// use ratatui::buffer::Buffer;
+/// use ratatui::layout::Rect;
+/// use ratatui::widgets::StatefulWidget;
+///
+/// let cfg = MatrixConfig::default();
+/// let mut state = MatrixRainState::with_seed(42);
+/// let mut buf = Buffer::empty(Rect::new(0, 0, 40, 12));
+/// MatrixRain::new(&cfg).render(Rect::new(0, 0, 40, 12), &mut buf, &mut state);
+/// assert_eq!(state.streams_len(), 40);
+/// ```
 pub struct MatrixRainState {
     streams: Vec<Stream>,
     last_tick: Option<Instant>,
@@ -25,10 +51,27 @@ pub struct MatrixRainState {
 }
 
 impl MatrixRainState {
+    /// Create a new state seeded from system entropy.
+    ///
+    /// Use [`with_seed`](Self::with_seed) instead when you need reproducible
+    /// output (snapshot tests, screenshots, `--seed` in the binary).
     pub fn new() -> Self {
         Self::from_rng(SmallRng::from_entropy())
     }
 
+    /// Create a new state with a deterministic RNG seed.
+    ///
+    /// Two states constructed with the same seed and driven through the same
+    /// area/config sequence produce identical streams.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use matrix_rain::MatrixRainState;
+    /// let a = MatrixRainState::with_seed(42);
+    /// let b = MatrixRainState::with_seed(42);
+    /// assert_eq!(a.streams_len(), b.streams_len());
+    /// ```
     pub fn with_seed(seed: u64) -> Self {
         Self::from_rng(SmallRng::seed_from_u64(seed))
     }
@@ -48,6 +91,14 @@ impl MatrixRainState {
         }
     }
 
+    /// Advance the animation by exactly one frame, regardless of wall-clock
+    /// time. Bypasses pause.
+    ///
+    /// Uses the area and configuration cached by the most recent
+    /// [`MatrixRain::render`](crate::MatrixRain) call; before the first
+    /// render, this is a silent no-op. `last_tick` is **not** touched, so
+    /// mixing manual ticks with wall-clock-driven renders will drift over
+    /// time — pick one driving mode per session.
     pub fn tick(&mut self) {
         let area = match self.last_area {
             Some(a) if a.width > 0 && a.height > 0 => a,
@@ -60,6 +111,11 @@ impl MatrixRainState {
         self.last_config = Some(config);
     }
 
+    /// Clear streams, timing, cached area/config, frame counter, and the
+    /// paused flag. RNG state and cached color count are preserved.
+    ///
+    /// After reset, the next render is treated as a first render (applies
+    /// exactly one tick).
     pub fn reset(&mut self) {
         self.streams.clear();
         self.last_tick = None;
@@ -88,10 +144,16 @@ impl MatrixRainState {
         self.accum = Duration::ZERO;
     }
 
+    /// Returns whether wall-clock advance is currently suppressed.
     pub fn is_paused(&self) -> bool {
         self.paused
     }
 
+    /// Returns the number of column streams currently allocated.
+    ///
+    /// After a render into a non-empty area, this equals `area.width as usize`.
+    /// After a render into an empty area (`width == 0` or `height == 0`),
+    /// returns `0`.
     pub fn streams_len(&self) -> usize {
         self.streams.len()
     }

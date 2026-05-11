@@ -1,3 +1,5 @@
+//! The [`MatrixRain`] widget — the public ratatui surface.
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -10,11 +12,48 @@ use crate::theme::ColorRamp;
 
 const TRUECOLOR_SENTINEL: u16 = u16::MAX;
 
+/// The ratatui widget rendering the Matrix digital rain effect.
+///
+/// `MatrixRain` borrows the [`MatrixConfig`] for the lifetime of the render
+/// call and consumes itself when rendered (per the
+/// [`StatefulWidget`](ratatui::widgets::StatefulWidget) contract). It is
+/// intentionally **stateful-only** — there is no plain `Widget` implementation.
+/// Animation requires per-frame state (column streams, RNG, timing, cached
+/// color tier) that a stateless wrapper would either reset every frame or
+/// hide behind surprising global mutable state.
+///
+/// # Example
+///
+/// ```
+/// use matrix_rain::{MatrixConfig, MatrixRain, MatrixRainState};
+/// use ratatui::buffer::Buffer;
+/// use ratatui::layout::Rect;
+/// use ratatui::widgets::StatefulWidget;
+///
+/// let cfg = MatrixConfig::default();
+/// let mut state = MatrixRainState::with_seed(0xC0FFEE);
+/// let area = Rect::new(0, 0, 40, 12);
+/// let mut buf = Buffer::empty(area);
+///
+/// // The widget is constructed once per frame and consumed by render().
+/// MatrixRain::new(&cfg).render(area, &mut buf, &mut state);
+/// ```
+///
+/// Inside a ratatui `Terminal::draw` closure:
+///
+/// ```ignore
+/// terminal.draw(|f| {
+///     f.render_stateful_widget(MatrixRain::new(&cfg), f.size(), &mut state);
+/// })?;
+/// ```
 pub struct MatrixRain<'a> {
     config: &'a MatrixConfig,
 }
 
 impl<'a> MatrixRain<'a> {
+    /// Create a new `MatrixRain` widget bound to the given configuration.
+    /// The config is borrowed for the lifetime of the widget; build it once
+    /// outside the render loop and pass `&cfg` here each frame.
     pub fn new(config: &'a MatrixConfig) -> Self {
         Self { config }
     }
