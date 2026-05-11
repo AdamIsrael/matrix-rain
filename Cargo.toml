@@ -85,3 +85,8 @@ required-features = ["crossterm"]
 [[example]]
 name = "custom_charset"
 required-features = ["crossterm"]
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
