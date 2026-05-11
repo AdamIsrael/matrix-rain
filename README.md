@@ -50,15 +50,25 @@ Quit with `q`, `Esc`, or `Ctrl-C` (or use `--quit-on-any-key`). Press `p` to pau
 
 ## Library usage
 
-Add to `Cargo.toml`:
+Add to `Cargo.toml`, picking your backend:
 
 ```toml
-[dependencies]
-matrix-rain = { version = "0.1", default-features = false }
+# crossterm (most common):
+matrix-rain = { version = "0.1", default-features = false, features = ["crossterm"] }
 ratatui = "0.26"
+
+# termion:
+matrix-rain = { version = "0.1", default-features = false, features = ["termion"] }
+ratatui = { version = "0.26", default-features = false, features = ["termion"] }
+
+# termwiz:
+matrix-rain = { version = "0.1", default-features = false, features = ["termwiz"] }
+ratatui = { version = "0.26", default-features = false, features = ["termwiz"] }
 ```
 
-(Disabling default features drops `clap`, `anyhow`, and `signal-hook`, which are only used by the standalone binary.)
+Disabling default features drops `clap`, `anyhow`, `signal-hook`, and the `matrix` binary itself — they're only used by the standalone installer. The `crossterm` / `termion` / `termwiz` features each forward to ratatui's same-named feature so one line covers both crates.
+
+The library itself is backend-agnostic — `MatrixRain` renders into a `ratatui::buffer::Buffer`. The bundled `examples/` use crossterm for their terminal-lifecycle scaffolding; embedders on other backends should treat them as templates and adapt the lifecycle to their backend.
 
 Embed the widget inside a larger ratatui layout:
 

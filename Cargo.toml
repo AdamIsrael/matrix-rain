@@ -10,16 +10,33 @@ categories = ["command-line-utilities", "visualization"]
 
 [features]
 default = ["binary"]
-binary = ["dep:clap", "dep:anyhow", "dep:signal-hook"]
+# The standalone `matrix` binary. Pulls in clap/anyhow/signal-hook for the
+# CLI + terminal lifecycle and forces the crossterm backend for both ratatui
+# and the binary's own raw-mode / alt-screen code.
+binary = [
+    "dep:clap",
+    "dep:anyhow",
+    "dep:signal-hook",
+    "dep:crossterm",
+    "ratatui/crossterm",
+]
+# Backend passthrough features: the matrix-rain library itself is
+# backend-agnostic (renders into a ratatui Buffer), but for ergonomics
+# downstream users can enable one of these to forward the choice to
+# ratatui in a single feature flag. Mirrors ratatui's own feature names.
+crossterm = ["ratatui/crossterm"]
+termion = ["ratatui/termion"]
+termwiz = ["ratatui/termwiz"]
+# Internal tracing instrumentation (developer use).
 debug = ["dep:tracing"]
 
 [dependencies]
-ratatui = "0.26"
-crossterm = "0.27"
+ratatui = { version = "0.26", default-features = false, features = ["underline-color"] }
 rand = { version = "0.8", features = ["small_rng"] }
 rand_xoshiro = "0.6"
 thiserror = "1"
 
+crossterm = { version = "0.27", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 anyhow = { version = "1", optional = true }
 signal-hook = { version = "0.3", optional = true }
@@ -41,3 +58,19 @@ path = "src/lib.rs"
 name = "matrix"
 path = "src/bin/matrix.rs"
 required-features = ["binary"]
+
+# Examples ship with crossterm-based terminal-lifecycle scaffolding (Drop guard,
+# panic hook, event loop). They demonstrate library usage but only build when
+# the crossterm feature is enabled; embedders on other backends should look at
+# the example as a template and adapt the lifecycle to their backend.
+[[example]]
+name = "standalone"
+required-features = ["crossterm"]
+
+[[example]]
+name = "embedded"
+required-features = ["crossterm"]
+
+[[example]]
+name = "custom_charset"
+required-features = ["crossterm"]

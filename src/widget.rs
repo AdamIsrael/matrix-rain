@@ -109,14 +109,23 @@ impl Tier {
 }
 
 fn detect_color_count() -> u16 {
+    // COLORTERM=truecolor|24bit is the de-facto standard for advertising
+    // 24-bit color support (alacritty, iTerm2, kitty, recent xterm, etc.).
+    // crossterm 0.27's available_color_count doesn't surface this, so we
+    // check it directly here. Signalled to the renderer via TRUECOLOR_SENTINEL.
     let truecolor = std::env::var("COLORTERM")
         .map(|v| matches!(v.trim(), "truecolor" | "24bit"))
         .unwrap_or(false);
     if truecolor {
-        TRUECOLOR_SENTINEL
-    } else {
-        crossterm::style::available_color_count()
+        return TRUECOLOR_SENTINEL;
     }
+    // Best-effort TERM env sniff (the same logic crossterm uses). Returns 256
+    // when TERM mentions 256color, 8 otherwise. Detection failure / unrecognized
+    // values fall through to the 16-color path per spec §6.3 — Tier::from_count
+    // collapses anything < 256 to Tier::Color16.
+    std::env::var("TERM")
+        .map(|t| if t.contains("256color") { 256u16 } else { 8 })
+        .unwrap_or(8)
 }
 
 fn paint_stream(

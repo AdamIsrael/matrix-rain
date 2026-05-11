@@ -50,11 +50,33 @@
 //! per render. See [`MatrixRainState::set_color_count`] if you also need to
 //! lock the rendering tier for reproducibility.
 //!
+//! # Backends
+//!
+//! The library is backend-agnostic — `MatrixRain` renders into a ratatui
+//! [`Buffer`](ratatui::buffer::Buffer), so any ratatui backend works. Pick
+//! one via a feature flag:
+//!
+//! - `crossterm` (default; enabled by the `binary` feature)
+//! - `termion`
+//! - `termwiz`
+//!
+//! Each feature simply forwards to ratatui's same-named feature, so a single
+//! line in `Cargo.toml` covers both crates:
+//!
+//! ```toml
+//! matrix-rain = { version = "0.1", default-features = false, features = ["termion"] }
+//! ```
+//!
+//! The default `binary` feature pulls in `crossterm` (plus `clap`, `anyhow`,
+//! and `signal-hook`) for the standalone `matrix` binary. Library-only users
+//! who don't need the binary should opt out with `default-features = false`
+//! and pick exactly one backend feature.
+//!
 //! # Color tiers
 //!
-//! Color depth is detected once per state on the first render via
-//! `crossterm::style::available_color_count` (supplemented by sniffing
-//! `COLORTERM=truecolor|24bit`, which crossterm 0.27 itself doesn't surface).
+//! Color depth is detected once per state on the first render via an env-var
+//! sniff: `COLORTERM=truecolor|24bit` (de-facto standard for advertising
+//! 24-bit support) wins; otherwise `TERM` is checked for `*256color*`.
 //! The result is cached on the state and drives one of three rendering paths:
 //!
 //! - **Truecolor**: linear RGB interpolation between the 5 stops in
