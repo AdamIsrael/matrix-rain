@@ -1,6 +1,9 @@
 //! [`MatrixConfig`] (the read-only configuration consumed by the widget),
 //! its fluent [`MatrixConfigBuilder`], and the [`MAX_TRAIL_LIMIT`] cap.
 
+use alloc::format;
+use alloc::string::ToString;
+
 use ratatui::style::Color;
 
 use crate::charset::CharSet;

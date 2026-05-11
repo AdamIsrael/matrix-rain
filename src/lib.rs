@@ -64,13 +64,42 @@
 //! line in `Cargo.toml` covers both crates:
 //!
 //! ```toml
-//! matrix-rain = { version = "0.1", default-features = false, features = ["termion"] }
+//! matrix-rain = { version = "0.3", default-features = false, features = ["termion"] }
 //! ```
 //!
 //! The default `binary` feature pulls in `crossterm` (plus `clap`, `anyhow`,
 //! and `signal-hook`) for the standalone `matrix` binary. Library-only users
 //! who don't need the binary should opt out with `default-features = false`
 //! and pick exactly one backend feature.
+//!
+//! # `no_std` / embedded
+//!
+//! The library is `no_std`-capable (`alloc` is required for `Vec`-backed
+//! per-column streams; the `binary` feature, the wall-clock animation path,
+//! and env-var-based terminal capability detection all require `std`).
+//!
+//! To use the widget on a target without `std` (e.g. ESP32 with `esp-hal` +
+//! the `mousefood` embedded ratatui backend), opt out of every feature:
+//!
+//! ```toml
+//! matrix-rain = { version = "0.3", default-features = false }
+//! ratatui = { version = "0.30", default-features = false, features = ["underline-color"] }
+//! ```
+//!
+//! Embedded usage differs from desktop in three places:
+//!
+//! 1. **Construction.** [`MatrixRainState::new`] (which seeds from system
+//!    entropy via `getrandom`) is unavailable; use
+//!    [`MatrixRainState::with_seed`] with a seed of your choosing (e.g. an
+//!    on-chip RNG, an HW counter, or just a constant).
+//! 2. **Driving frames.** Without `std`, [`MatrixRain::render`] handles
+//!    resize and paints the current state but does **not** advance the
+//!    animation — there is no `Instant::now()`. Drive frames manually with
+//!    [`MatrixRainState::tick`] at whatever cadence your main loop dictates
+//!    (e.g. once per `target_period - render_time`).
+//! 3. **Color tier.** Auto-detection (via `COLORTERM` / `TERM`) is disabled;
+//!    call [`MatrixRainState::set_color_count`] once after construction to
+//!    pick a tier. `16` is the safest default for an embedded display.
 //!
 //! # Color tiers
 //!
@@ -118,7 +147,10 @@
 //!   `--help` and `--version` still work in non-TTY contexts (they run before
 //!   the check).
 
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
 
 mod charset;
 mod config;

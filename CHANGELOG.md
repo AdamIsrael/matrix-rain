@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-11
+
+### Added
+
+- **`no_std` support.** The library now compiles without `std` for embedded
+  targets such as ESP32 (`riscv32imac-unknown-none-elf` verified). Enable by
+  building with `default-features = false`; `alloc` is required (for the
+  `Vec`-backed per-column streams), `std` is not. See the new
+  "`no_std` / embedded" section in the README and lib-level docs.
+- **`std` Cargo feature.** Gates the wall-clock animation path
+  (`Instant::now()`), env-var-based terminal capability detection
+  (`COLORTERM` / `TERM`), and the `MatrixRainState::new()` entropy-seeded
+  constructor. The `binary`, `crossterm`, `termion`, and `termwiz` features
+  all imply `std`. On by default.
+
+### Changed
+
+- **MSRV: 1.74 → 1.86.** Required by ratatui 0.30.
+- **ratatui: 0.26 → 0.30.** Includes the umbrella crate's split into
+  `ratatui-core` / `ratatui-widgets` / `ratatui-crossterm` / etc.; the
+  public API surface this crate uses (`StatefulWidget`, `Buffer`, `Color`,
+  `Style`, `Modifier`) is unchanged.
+- **crossterm: 0.27 → 0.28** (matching ratatui 0.30's `ratatui-crossterm`
+  default).
+- **thiserror: 1 → 2.** Required for `no_std` `derive(Error)` support.
+- **`MatrixRain::render` under `no_std`** handles resize and paints the
+  current state but does not advance the animation — callers must drive
+  frames manually via `MatrixRainState::tick()`. Under `std` behaviour is
+  unchanged.
+- **Migrated to `buf[(x, y)]`** indexing API; `Buffer::get_mut` / `Buffer::get`
+  are deprecated in ratatui 0.30.
+- **Replaced std-only `f32::floor` / `f32::round`** call sites in the renderer
+  with equivalent `as` casts that exploit non-negative bounds — produces
+  byte-identical output without needing `libm` on no_std targets.
+
+### Migration notes
+
+- Library consumers who pinned `matrix-rain = "0.2"` and depend on the
+  default `binary` feature: no code changes required, just bump to `"0.3"`.
+- Embedders going `default-features = false` must now also pick a backend
+  feature (`crossterm` / `termion` / `termwiz`) or go full `no_std`; see
+  the README's library-usage and embedded sections.
+
 ## [0.2.0] — 2026-05-11
 
 ### Added
@@ -45,6 +88,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial release. Core `MatrixRain<'a>` widget + `MatrixRainState`, `MatrixConfig` with builder, `Theme::ClassicGreen`, `CharSet::Matrix`. Standalone `matrix` binary with clap CLI, terminal-lifecycle Drop guard, panic hook, Unix signal handling (`SIGINT`/`SIGTERM`/`SIGHUP`), BrokenPipe shutdown. Frame loop with sub-tick `accum`, `MAX_CATCHUP_TICKS=4` after suspend/resume, resize handling. Per-column `Stream` lifecycle with cooldown-gated respawn. Color depth detection cached on state; truecolor smooth interpolation / 256-color nearest-of-5 / 16-color named-collapse rendering tiers. ratatui `StatefulWidget` impl with `area.x`/`area.y` checked-arithmetic coordinate handling.
 
-[Unreleased]: https://github.com/AdamIsrael/matrix-rain/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/AdamIsrael/matrix-rain/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/AdamIsrael/matrix-rain/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AdamIsrael/matrix-rain/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AdamIsrael/matrix-rain/releases/tag/v0.1.0

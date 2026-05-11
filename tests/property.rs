@@ -110,7 +110,7 @@ proptest! {
         let mut buf = Buffer::empty(buf_area);
         for y in 0..outer_h {
             for x in 0..outer_w {
-                buf.get_mut(x, y).set_char('#');
+                buf[(x, y)].set_char('#');
             }
         }
         let widget_area = Rect::new(ox, oy, widget_w, widget_h);
@@ -123,7 +123,7 @@ proptest! {
                 let inside = (ox..ox + widget_w).contains(&x)
                     && (oy..oy + widget_h).contains(&y);
                 if !inside {
-                    prop_assert_eq!(buf.get(x, y).symbol(), "#",
+                    prop_assert_eq!(buf[(x, y)].symbol(), "#",
                         "cell ({}, {}) outside widget area was modified", x, y);
                 }
             }

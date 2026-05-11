@@ -19,7 +19,7 @@ fn buf_to_string(buf: &Buffer) -> String {
     let mut s = String::new();
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
-            let sym = buf.get(x, y).symbol();
+            let sym = buf[(x, y)].symbol();
             if sym.is_empty() {
                 s.push(' ');
             } else {

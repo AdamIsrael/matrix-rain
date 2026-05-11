@@ -1,5 +1,7 @@
 //! Error types returned by the builder and config validation.
 
+use alloc::string::String;
+
 use thiserror::Error;
 
 /// Errors produced by [`MatrixConfigBuilder::build`](crate::MatrixConfigBuilder::build)

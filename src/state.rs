@@ -1,9 +1,14 @@
 //! Per-frame animation state carried across [`MatrixRain`](crate::MatrixRain)
 //! renders.
 
-use std::cell::Cell;
-use std::marker::PhantomData;
-use std::time::{Duration, Instant};
+use alloc::vec::Vec;
+use core::cell::Cell;
+use core::marker::PhantomData;
+
+#[cfg(feature = "std")]
+use core::time::Duration;
+#[cfg(feature = "std")]
+use std::time::Instant;
 
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -12,6 +17,7 @@ use ratatui::layout::Rect;
 use crate::config::MatrixConfig;
 use crate::stream::Stream;
 
+#[cfg(feature = "std")]
 const MAX_CATCHUP_TICKS: u32 = 4;
 
 /// Per-frame animation state for a [`MatrixRain`](crate::MatrixRain) widget.
@@ -39,7 +45,9 @@ const MAX_CATCHUP_TICKS: u32 = 4;
 /// ```
 pub struct MatrixRainState {
     streams: Vec<Stream>,
+    #[cfg(feature = "std")]
     last_tick: Option<Instant>,
+    #[cfg(feature = "std")]
     accum: Duration,
     frame: u64,
     rng: SmallRng,
@@ -55,6 +63,10 @@ impl MatrixRainState {
     ///
     /// Use [`with_seed`](Self::with_seed) instead when you need reproducible
     /// output (snapshot tests, screenshots, `--seed` in the binary).
+    ///
+    /// **Requires the `std` feature** (entropy comes from `getrandom`).
+    /// `no_std` callers must use [`with_seed`](Self::with_seed).
+    #[cfg(feature = "std")]
     pub fn new() -> Self {
         Self::from_rng(SmallRng::from_entropy())
     }
@@ -79,7 +91,9 @@ impl MatrixRainState {
     fn from_rng(rng: SmallRng) -> Self {
         Self {
             streams: Vec::new(),
+            #[cfg(feature = "std")]
             last_tick: None,
+            #[cfg(feature = "std")]
             accum: Duration::ZERO,
             frame: 0,
             rng,
@@ -118,8 +132,11 @@ impl MatrixRainState {
     /// exactly one tick).
     pub fn reset(&mut self) {
         self.streams.clear();
-        self.last_tick = None;
-        self.accum = Duration::ZERO;
+        #[cfg(feature = "std")]
+        {
+            self.last_tick = None;
+            self.accum = Duration::ZERO;
+        }
         self.last_area = None;
         self.last_config = None;
         self.frame = 0;
@@ -140,8 +157,11 @@ impl MatrixRainState {
     /// trigger. Idempotent.
     pub fn resume(&mut self) {
         self.paused = false;
-        self.last_tick = None;
-        self.accum = Duration::ZERO;
+        #[cfg(feature = "std")]
+        {
+            self.last_tick = None;
+            self.accum = Duration::ZERO;
+        }
     }
 
     /// Returns whether wall-clock advance is currently suppressed.
@@ -177,14 +197,18 @@ impl MatrixRainState {
     pub(crate) fn advance(&mut self, area: Rect, config: &MatrixConfig) {
         if area.width == 0 || area.height == 0 {
             self.streams.clear();
-            self.last_tick = None;
-            self.accum = Duration::ZERO;
+            #[cfg(feature = "std")]
+            {
+                self.last_tick = None;
+                self.accum = Duration::ZERO;
+            }
             self.last_area = None;
             return;
         }
 
         self.handle_resize(area, config);
 
+        #[cfg(feature = "std")]
         if !self.paused {
             let now = Instant::now();
             let ticks = self.compute_tick_budget(now, config);
@@ -230,6 +254,7 @@ impl MatrixRainState {
         }
     }
 
+    #[cfg(feature = "std")]
     fn compute_tick_budget(&mut self, now: Instant, config: &MatrixConfig) -> u32 {
         let ticks_per_sec = (config.fps as f32) * config.speed;
         if !ticks_per_sec.is_finite() || ticks_per_sec <= 0.0 {
@@ -289,6 +314,7 @@ impl MatrixRainState {
     }
 }
 
+#[cfg(feature = "std")]
 impl Default for MatrixRainState {
     fn default() -> Self {
         Self::new()

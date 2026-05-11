@@ -10,6 +10,7 @@ use crate::state::MatrixRainState;
 use crate::stream::Stream;
 use crate::theme::ColorRamp;
 
+#[cfg_attr(not(feature = "std"), allow(dead_code))]
 const TRUECOLOR_SENTINEL: u16 = u16::MAX;
 
 /// The ratatui widget rendering the Matrix digital rain effect.
@@ -108,10 +109,11 @@ impl Tier {
     }
 }
 
+#[cfg(feature = "std")]
 fn detect_color_count() -> u16 {
     // COLORTERM=truecolor|24bit is the de-facto standard for advertising
     // 24-bit color support (alacritty, iTerm2, kitty, recent xterm, etc.).
-    // crossterm 0.27's available_color_count doesn't surface this, so we
+    // crossterm 0.28's available_color_count doesn't surface this, so we
     // check it directly here. Signalled to the renderer via TRUECOLOR_SENTINEL.
     let truecolor = std::env::var("COLORTERM")
         .map(|v| matches!(v.trim(), "truecolor" | "24bit"))
@@ -128,6 +130,15 @@ fn detect_color_count() -> u16 {
         .unwrap_or(8)
 }
 
+// no_std: no environment to sniff. Fall through to the 16-color path so
+// painting is always safe; embedded callers should call
+// `MatrixRainState::set_color_count` once at startup to pick a higher tier
+// if the display supports one.
+#[cfg(not(feature = "std"))]
+fn detect_color_count() -> u16 {
+    8
+}
+
 fn paint_stream(
     stream: &Stream,
     area: Rect,
@@ -139,7 +150,11 @@ fn paint_stream(
     tier: Tier,
     col: u16,
 ) {
-    let head_int = stream.head_row().floor() as i32;
+    // `head_row` is invariantly >= 0 (clamped in handle_resize, only ever
+    // incremented by positive speed/fps in stream.tick), so truncation
+    // toward zero via `as i32` produces the same result as `floor()` —
+    // and works in no_std where the `floor` method is unavailable.
+    let head_int = stream.head_row() as i32;
     let length = stream.length();
     let glyphs = stream.glyphs();
     let buf_area = buf.area;
@@ -182,7 +197,7 @@ fn paint_stream(
             style = style.add_modifier(Modifier::BOLD);
         }
 
-        let cell = buf.get_mut(x, y);
+        let cell = &mut buf[(x, y)];
         cell.set_char(glyph);
         cell.set_style(style);
     }
@@ -204,21 +219,24 @@ fn pick_color(ramp: &ColorRamp, head_white: bool, i: u16, length: u16, tier: Tie
 
 fn pick_nearest_stop(ramp: &ColorRamp, t: f32) -> Color {
     let stops = [ramp.head, ramp.bright, ramp.mid, ramp.dim, ramp.fade];
-    let idx = ((t * 4.0).round() as usize).min(4);
+    // `t * 4.0` is invariantly >= 0; round-half-up via `+ 0.5` then truncate.
+    let idx = ((t * 4.0 + 0.5) as usize).min(4);
     stops[idx]
 }
 
 fn interpolate_smooth(ramp: &ColorRamp, t: f32) -> Color {
     let stops = [ramp.head, ramp.bright, ramp.mid, ramp.dim, ramp.fade];
     let scaled = (t.clamp(0.0, 1.0)) * 4.0;
-    let lo = (scaled.floor() as usize).min(4);
+    // `scaled` is in [0.0, 4.0]; truncation toward zero == floor.
+    let lo = (scaled as usize).min(4);
     let hi = (lo + 1).min(4);
     let local = scaled - lo as f32;
     let (lr, lg, lb) = to_rgb(stops[lo]);
     let (hr, hg, hb) = to_rgb(stops[hi]);
-    let r = ((1.0 - local) * lr as f32 + local * hr as f32).round() as u8;
-    let g = ((1.0 - local) * lg as f32 + local * hg as f32).round() as u8;
-    let b = ((1.0 - local) * lb as f32 + local * hb as f32).round() as u8;
+    // Each blended channel is in [0.0, 255.0]; `+ 0.5` then truncate == round.
+    let r = ((1.0 - local) * lr as f32 + local * hr as f32 + 0.5) as u8;
+    let g = ((1.0 - local) * lg as f32 + local * hg as f32 + 0.5) as u8;
+    let b = ((1.0 - local) * lb as f32 + local * hb as f32 + 0.5) as u8;
     Color::Rgb(r, g, b)
 }
 
@@ -352,7 +370,7 @@ mod tests {
         let mut buf = Buffer::empty(buf_area);
         for y in 0..20 {
             for x in 0..20 {
-                buf.get_mut(x, y).set_char('#');
+                buf[(x, y)].set_char('#');
             }
         }
         let widget_area = Rect::new(5, 5, 10, 10);
@@ -365,7 +383,7 @@ mod tests {
                 let inside = (5..15).contains(&x) && (5..15).contains(&y);
                 if !inside {
                     assert_eq!(
-                        buf.get(x, y).symbol(),
+                        buf[(x, y)].symbol(),
                         "#",
                         "cell ({x},{y}) outside widget area was modified"
                     );
@@ -387,7 +405,7 @@ mod tests {
         let mut painted = 0;
         for y in 0..20 {
             for x in 0..20 {
-                let sym = buf.get(x, y).symbol();
+                let sym = buf[(x, y)].symbol();
                 if !sym.is_empty() && sym != " " {
                     painted += 1;
                 }
@@ -410,7 +428,7 @@ mod tests {
         let mut painted_outside = 0;
         for y in 0..30 {
             for x in 0..30 {
-                let sym = buf.get(x, y).symbol();
+                let sym = buf[(x, y)].symbol();
                 if !sym.is_empty() && sym != " " {
                     let inside = (7..15).contains(&x) && (11..19).contains(&y);
                     if inside {

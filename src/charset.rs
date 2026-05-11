@@ -1,5 +1,8 @@
 //! Built-in glyph sets and the [`CharSet`] enum for supplying your own.
 
+use alloc::format;
+use alloc::vec::Vec;
+
 use crate::error::MatrixError;
 
 /// Source of glyphs for the falling drops.

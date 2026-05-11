@@ -266,7 +266,7 @@ fn run(args: &Cli, cfg: &MatrixConfig, shutdown: Arc<AtomicBool>) -> Result<()> 
 
     while !shutdown.load(Ordering::Relaxed) {
         match terminal.draw(|f| {
-            f.render_stateful_widget(MatrixRain::new(cfg), f.size(), &mut state);
+            f.render_stateful_widget(MatrixRain::new(cfg), f.area(), &mut state);
         }) {
             Ok(_) => {}
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return Ok(()),

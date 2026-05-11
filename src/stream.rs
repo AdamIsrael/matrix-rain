@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::Rng;

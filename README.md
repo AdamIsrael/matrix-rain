@@ -54,16 +54,16 @@ Add to `Cargo.toml`, picking your backend:
 
 ```toml
 # crossterm (most common):
-matrix-rain = { version = "0.1", default-features = false, features = ["crossterm"] }
-ratatui = "0.26"
+matrix-rain = { version = "0.3", default-features = false, features = ["crossterm"] }
+ratatui = "0.30"
 
 # termion:
-matrix-rain = { version = "0.1", default-features = false, features = ["termion"] }
-ratatui = { version = "0.26", default-features = false, features = ["termion"] }
+matrix-rain = { version = "0.3", default-features = false, features = ["termion"] }
+ratatui = { version = "0.30", default-features = false, features = ["termion"] }
 
 # termwiz:
-matrix-rain = { version = "0.1", default-features = false, features = ["termwiz"] }
-ratatui = { version = "0.26", default-features = false, features = ["termwiz"] }
+matrix-rain = { version = "0.3", default-features = false, features = ["termwiz"] }
+ratatui = { version = "0.30", default-features = false, features = ["termwiz"] }
 ```
 
 Disabling default features drops `clap`, `anyhow`, `signal-hook`, and the `matrix` binary itself — they're only used by the standalone installer. The `crossterm` / `termion` / `termwiz` features each forward to ratatui's same-named feature so one line covers both crates.
@@ -119,6 +119,37 @@ The widget is intentionally `StatefulWidget`-only. Animation needs state that pe
 | `Red` | Hostile red |
 | `Rainbow` | White head → red → yellow → green → blue across the trail |
 | `Custom(ColorRamp)` | Hand-built 5-stop ramp |
+
+## `no_std` / embedded (ESP32, etc.)
+
+The library is `no_std`-capable (requires `alloc`). Drop the `std`-dependent
+pieces — wall-clock animation, env-var-based color detection, entropy-seeded
+constructor, and the standalone binary — by opting out of every feature:
+
+```toml
+matrix-rain = { version = "0.3", default-features = false }
+ratatui    = { version = "0.30", default-features = false, features = ["underline-color"] }
+```
+
+Then pick a ratatui backend appropriate for your target (e.g. `mousefood` for
+embedded-graphics displays). Three differences from the desktop story:
+
+1. **Construct with `with_seed`.** `MatrixRainState::new()` is `std`-only
+   (it pulls entropy via `getrandom`); embedded callers supply a seed from
+   wherever they please.
+2. **Drive frames manually.** Without `std` there is no `Instant::now()`, so
+   `MatrixRain::render` only handles resize and paints the current state.
+   Call `state.tick()` once per frame at your loop's cadence — typically
+   `target_period - render_time` measured with `esp_hal::time::Instant` or
+   similar.
+3. **Set the color tier explicitly.** Env-var sniffing is gone; call
+   `state.set_color_count(16)` (or `256`, or `u16::MAX` for smooth RGB)
+   once at startup.
+
+Note on `riscv32imc` (ESP32-C3 / no-atomics): ratatui's layout solver needs
+atomic CAS, so on chips without it you must enable ratatui's `portable-atomic`
+feature and configure the polyfill per its docs. ESP32-C6 / -H2 (`riscv32imac`)
+have native atomics and work out of the box.
 
 ## Pause / resume
 
