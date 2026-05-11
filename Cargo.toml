@@ -7,6 +7,8 @@ description = "Classic Matrix digital rain effect as a ratatui widget and standa
 license = "MIT"
 keywords = ["matrix", "rain", "tui", "ratatui", "terminal"]
 categories = ["command-line-utilities", "visualization"]
+homepage = "https://github.com/AdamIsrael/matrix-rain.git"
+repository = "https://github.com/AdamIsrael/matrix-rain.git"
 
 [features]
 default = ["binary"]
