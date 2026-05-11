@@ -20,6 +20,7 @@ pub struct MatrixRainState {
     last_area: Option<Rect>,
     color_count: Option<u16>,
     last_config: Option<MatrixConfig>,
+    paused: bool,
     _not_sync: PhantomData<Cell<()>>,
 }
 
@@ -42,6 +43,7 @@ impl MatrixRainState {
             last_area: None,
             color_count: None,
             last_config: None,
+            paused: false,
             _not_sync: PhantomData,
         }
     }
@@ -65,6 +67,29 @@ impl MatrixRainState {
         self.last_area = None;
         self.last_config = None;
         self.frame = 0;
+        self.paused = false;
+    }
+
+    /// Pause wall-clock-driven advance. Subsequent `render()` / `advance()` calls
+    /// still handle resize and paint the current state, but do not move streams
+    /// forward. Manual `tick()` is unaffected. Idempotent.
+    pub fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    /// Resume wall-clock-driven advance after a `pause()`. Discards any
+    /// previously-recorded `last_tick`/`accum` so the next render is treated
+    /// as a first render (exactly one tick applied) — preventing the
+    /// catch-up-cap stutter that an accumulated pause-time would otherwise
+    /// trigger. Idempotent.
+    pub fn resume(&mut self) {
+        self.paused = false;
+        self.last_tick = None;
+        self.accum = Duration::ZERO;
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
     }
 
     pub fn streams_len(&self) -> usize {
@@ -98,13 +123,15 @@ impl MatrixRainState {
 
         self.handle_resize(area, config);
 
-        let now = Instant::now();
-        let ticks = self.compute_tick_budget(now, config);
-        for _ in 0..ticks {
-            self.apply_one_tick(area, config);
+        if !self.paused {
+            let now = Instant::now();
+            let ticks = self.compute_tick_budget(now, config);
+            for _ in 0..ticks {
+                self.apply_one_tick(area, config);
+            }
+            self.last_tick = Some(now);
         }
 
-        self.last_tick = Some(now);
         self.last_area = Some(area);
         self.last_config = Some(config.clone());
     }
@@ -397,6 +424,90 @@ mod tests {
         s.apply_one_tick(area(8, 400), &cfg);
         assert!(s.streams[idx].is_active());
         assert_eq!(s.streams[idx].glyphs(), before.as_slice());
+    }
+
+    #[test]
+    fn pause_freezes_frame_advance_in_render_path() {
+        let cfg = MatrixConfig::default();
+        let mut s = MatrixRainState::with_seed(0xBABE);
+        s.advance(area(8, 20), &cfg);
+        let frame_after_first = s.frame;
+        assert!(frame_after_first > 0);
+
+        s.pause();
+        assert!(s.is_paused());
+        // Many renders while paused — frame counter must not advance.
+        for _ in 0..50 {
+            s.advance(area(8, 20), &cfg);
+        }
+        assert_eq!(s.frame, frame_after_first);
+        // last_area is still cached (so resize handling stays consistent).
+        assert_eq!(s.last_area, Some(area(8, 20)));
+    }
+
+    #[test]
+    fn resume_clears_last_tick_so_next_render_is_first_render() {
+        let cfg = MatrixConfig::default();
+        let mut s = MatrixRainState::with_seed(0xBABE);
+        s.advance(area(8, 20), &cfg);
+        s.pause();
+        s.advance(area(8, 20), &cfg);
+
+        s.resume();
+        assert!(!s.is_paused());
+        assert!(s.last_tick.is_none());
+        assert_eq!(s.accum, Duration::ZERO);
+
+        let frame_before = s.frame;
+        s.advance(area(8, 20), &cfg);
+        assert_eq!(
+            s.frame,
+            frame_before + 1,
+            "post-resume render should apply exactly one tick (first-render path)"
+        );
+    }
+
+    #[test]
+    fn tick_bypasses_pause() {
+        let cfg = MatrixConfig::default();
+        let mut s = MatrixRainState::with_seed(0xBABE);
+        s.advance(area(8, 20), &cfg);
+        s.pause();
+        let frame_before = s.frame;
+        s.tick();
+        assert_eq!(s.frame, frame_before + 1);
+        assert!(s.is_paused(), "tick must not implicitly resume");
+    }
+
+    #[test]
+    fn pause_and_resume_are_idempotent() {
+        let mut s = MatrixRainState::new();
+        s.pause();
+        s.pause();
+        assert!(s.is_paused());
+        s.resume();
+        s.resume();
+        assert!(!s.is_paused());
+    }
+
+    #[test]
+    fn reset_clears_paused_state() {
+        let mut s = MatrixRainState::new();
+        s.pause();
+        s.reset();
+        assert!(!s.is_paused());
+    }
+
+    #[test]
+    fn resize_while_paused_still_resizes_streams() {
+        let cfg = MatrixConfig::default();
+        let mut s = MatrixRainState::with_seed(0xBABE);
+        s.advance(area(8, 20), &cfg);
+        s.pause();
+        s.advance(area(16, 20), &cfg);
+        assert_eq!(s.streams.len(), 16);
+        s.advance(area(4, 20), &cfg);
+        assert_eq!(s.streams.len(), 4);
     }
 
     #[test]

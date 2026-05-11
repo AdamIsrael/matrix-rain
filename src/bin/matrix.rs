@@ -230,6 +230,13 @@ fn should_quit(key: &KeyEvent, any_key: bool) -> bool {
         && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
+fn is_pause_toggle(key: &KeyEvent) -> bool {
+    if matches!(key.kind, KeyEventKind::Release | KeyEventKind::Repeat) {
+        return false;
+    }
+    matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P'))
+}
+
 fn build_config(args: &Cli) -> Result<MatrixConfig> {
     let charset = resolve_charset(&args.charset)?;
     MatrixConfig::builder()
@@ -271,6 +278,13 @@ fn run(args: &Cli, cfg: &MatrixConfig, shutdown: Arc<AtomicBool>) -> Result<()> 
                 Event::Key(key) => {
                     if should_quit(&key, args.quit_on_any_key) {
                         break;
+                    }
+                    if is_pause_toggle(&key) {
+                        if state.is_paused() {
+                            state.resume();
+                        } else {
+                            state.pause();
+                        }
                     }
                 }
                 _ => {}
@@ -442,6 +456,28 @@ mod tests {
         assert!(!should_quit(&k, true));
         k.kind = KeyEventKind::Repeat;
         assert!(!should_quit(&k, true));
+    }
+
+    #[test]
+    fn pause_toggle_fires_on_p() {
+        assert!(is_pause_toggle(&key(KeyCode::Char('p'), KeyModifiers::NONE)));
+        assert!(is_pause_toggle(&key(KeyCode::Char('P'), KeyModifiers::NONE)));
+    }
+
+    #[test]
+    fn pause_toggle_ignores_other_keys() {
+        assert!(!is_pause_toggle(&key(KeyCode::Char('q'), KeyModifiers::NONE)));
+        assert!(!is_pause_toggle(&key(KeyCode::Char(' '), KeyModifiers::NONE)));
+        assert!(!is_pause_toggle(&key(KeyCode::Esc, KeyModifiers::NONE)));
+    }
+
+    #[test]
+    fn pause_toggle_ignores_release_and_repeat() {
+        let mut k = key(KeyCode::Char('p'), KeyModifiers::NONE);
+        k.kind = KeyEventKind::Release;
+        assert!(!is_pause_toggle(&k));
+        k.kind = KeyEventKind::Repeat;
+        assert!(!is_pause_toggle(&k));
     }
 
     #[test]

@@ -32,7 +32,7 @@ matrix --seed 42                # deterministic output (handy for screenshots)
 matrix --help                   # full reference
 ```
 
-Quit with `q`, `Esc`, or `Ctrl-C` (or use `--quit-on-any-key`).
+Quit with `q`, `Esc`, or `Ctrl-C` (or use `--quit-on-any-key`). Press `p` to pause / resume the animation.
 
 ## CLI options
 
@@ -109,6 +109,16 @@ The widget is intentionally `StatefulWidget`-only. Animation needs state that pe
 | `Red` | Hostile red |
 | `Rainbow` | White head → red → yellow → green → blue across the trail |
 | `Custom(ColorRamp)` | Hand-built 5-stop ramp |
+
+## Pause / resume
+
+```rust
+state.pause();   // freezes wall-clock-driven advance; render still paints
+state.resume();  // next render is treated as a first render (no catch-up stutter)
+state.is_paused();
+```
+
+`tick()` bypasses pause — manual driving always advances. `reset()` clears the paused flag. The binary toggles pause on the `p` key.
 
 ## Determinism
 
